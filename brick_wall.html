@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brick Laying Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            max-width: 95%;
+            width: 1200px;
+        }
+        canvas {
+            border: 2px solid #333;
+            background-color: #f8f8f8;
+            border-radius: 8px;
+            display: block;
+            margin: 0 auto;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center; /* Align items vertically */
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .button {
+            background-color: #4CAF50; /* Green */
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .button:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        .button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .button.reset {
+            background-color: #f44336; /* Red */
+        }
+        .button.reset:hover {
+            background-color: #da190b;
+        }
+        #message {
+            font-size: 1.1em;
+            font-weight: 500;
+            color: #333;
+            margin-top: 10px;
+            text-align: center;
+        }
+        #lastLaidBrickInfo {
+            font-size: 1em;
+            font-weight: 400;
+            color: #555;
+            margin-top: 5px;
+            text-align: center;
+        }
+        select {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            background-color: #f9f9f9;
+            cursor: pointer;
+            outline: none;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+        select:focus {
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4">Brick Laying Simulator</h1>
+        <canvas id="wallCanvas"></canvas>
+        <div class="controls">
+            <div class="control-group">
+                <label for="bondSelect" class="font-semibold text-gray-700">Bond Type:</label>
+                <select id="bondSelect">
+                    <option value="stretcher">Stretcher Bond</option>
+                    <option value="english_cross">English Cross Bond</option>
+                </select>
+            </div>
+            <button id="layNextBtn" class="button">Lay Next Stride</button>
+            <button id="laySingleBrickBtn" class="button">Lay One Brick (Enter)</button>
+            <button id="resetBtn" class="button reset">Reset Wall</button>
+        </div>
+        <p id="message">Click "Lay Next Stride" or "Lay One Brick" to begin!</p>
+        <p id="lastLaidBrickInfo">Last Laid Brick ID: None</p>
+    </div>
+
+    <script>
+        // Constants for brick dimensions and colors
+        const HALF_BRICK_LENGTH = 100;
+        const BRICK_LENGTH = 210;
+        const HEAD_JOINT = 10; // Vertical joint between bricks
+        const BED_JOINT = 12.5; // Horizontal joint (mortar)
+        const COURSE_HEIGHT = 62.5;
+
+        // Visual constants
+        const BRICK_BORDER_COLOR = '#333';
+        const JOINT_COLOR = '#a0a0a0'; // Color for mortar joints
+        const UNLAID_BRICK_COLOR = '#d0d0d0'; // Light grey for unlaid bricks
+        const LAID_BRICK_COLORS = [
+            '#a8dadc', '#457b9d', '#1d3557', // Blues
+            '#f4a261', '#e76f51', '#2a9d8f', // Oranges/Greens
+            '#ef476f', '#ffd166', '#06d6a0', // Pinks/Yellows/Greens
+            '#073b4c', '#c1dbe3', '#83c5be'  // Darker blues, lighter tones
+        ];
+        let colorCycleIndex = 0;
+
+        const canvas = document.getElementById('wallCanvas');
+        const ctx = canvas.getContext('2d');
+        const layNextBtn = document.getElementById('layNextBtn');
+        const laySingleBrickBtn = document.getElementById('laySingleBrickBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const messageDisplay = document.getElementById('message');
+        const lastLaidBrickInfo = document.getElementById('lastLaidBrickInfo');
+        const bondSelect = document.getElementById('bondSelect');
+
+        let wallInstance;
+        let allStrides = []; // Stores the pre-calculated laying order by strides
+        let currentStrideIndex = 0; // Index of the current stride being processed
+        let currentBrickInStrideIndex = 0; // Index of the current brick within the current stride
+
+        /**
+         * Represents a single brick with its properties.
+         */
+        class Brick {
+            constructor(brick_id, x_llc, y_llc, x_urc, y_urc) {
+                this.id = brick_id;
+                this.position = { x_llc, y_llc, x_urc, y_urc };
+                this.layed = false;
+                this.supporting_bricks = [];
+                this.dimensions = { length: BRICK_LENGTH, height: COURSE_HEIGHT };
+                this.color = UNLAID_BRICK_COLOR;
+            }
+
+            /**
+             * Provides a string representation of the Brick object.
+             * @returns {string} The string representation.
+             */
+            toString() {
+                return `Brick(id=${this.id}, pos=(${this.position.x_llc}, ${this.position.y_llc}, ${this.position.x_urc}, ${this.position.y_urc}), layed=${this.layed}, supports=${this.supporting_bricks})`;
+            }
+        }
+
+        /**
+         * Represents the entire wall, managing bricks and laying logic.
+         */
+        class Wall {
+            constructor(bond, width_mm = 2300, height_mm = 2000) {
+                this.width_mm = width_mm;
+                this.height_mm = height_mm;
+                this.bricks = new Map();
+                this.bond = bond;
+                this._build_wall();
+            }
+
+            /**
+             * Chooses the wall building method based on the bond type.
+             */
+            _build_wall() {
+                if (this.bond === 'english_cross') {
+                    this.width_mm = 2080;
+                    this.build_english_cross_bond();
+                } else {
+                    this.width_mm = 2300;
+                    this.build_stretcher_wall();
+                }
+                this.assign_support();
+            }
+
+            /**
+             * Builds the wall structure using the English Cross Bond pattern,
+             * orienting itself on the Python code's logic.
+             */
+            build_english_cross_bond() {
+                const FULL_HALF_BRICK = HALF_BRICK_LENGTH + HEAD_JOINT;
+                const FULL_BRICK_PLUS_JOINT = BRICK_LENGTH + HEAD_JOINT;
+
+                const number_small_bricks = Math.floor((this.width_mm - HALF_BRICK_LENGTH) / FULL_HALF_BRICK);
+                const number_even = 8; // Explicitly set based on Python's resulting pattern for 2080mm
+
+                const num_courses = Math.floor(this.height_mm / COURSE_HEIGHT);
+                let brick_id = 0;
+
+                for (let course = 0; course < num_courses; course++) {
+                    let x_llc = 0;
+                    let x_urc_local;
+                    const y_llc = course * COURSE_HEIGHT;
+                    const y_urc = (course + 1) * COURSE_HEIGHT;
+
+                    if (course % 4 === 0) {
+                        x_urc_local = x_llc + FULL_BRICK_PLUS_JOINT;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        brick_id++;
+                        x_llc = x_urc_local;
+
+                        x_urc_local = x_llc + FULL_HALF_BRICK;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        brick_id++;
+                        x_llc = x_urc_local;
+
+                        for (let brick = 0; brick < number_even - 1; brick++) {
+                            x_urc_local = x_llc + FULL_BRICK_PLUS_JOINT;
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                            brick_id++;
+                            x_llc = x_urc_local;
+                        }
+
+                        x_urc_local = x_llc + BRICK_LENGTH;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        brick_id++;
+
+                    } else if (course % 2 !== 0) {
+                        for (let brick = 0; brick < number_small_bricks; brick++) {
+                            x_urc_local = x_llc + FULL_HALF_BRICK;
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                            brick_id++;
+                            x_llc = x_urc_local;
+                        }
+                        x_urc_local = x_llc + HALF_BRICK_LENGTH;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        brick_id++;
+
+                    } else if ((course + 2) % 4 === 0) {
+                        for (let brick = 0; brick < number_even; brick++) {
+                            x_urc_local = x_llc + FULL_BRICK_PLUS_JOINT;
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                            brick_id++;
+                            x_llc = x_urc_local;
+                        }
+
+                        x_urc_local = x_llc + FULL_HALF_BRICK;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        brick_id++;
+                        x_llc = x_urc_local;
+
+                        x_urc_local = x_llc + BRICK_LENGTH;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        brick_id++;
+                    }
+                }
+            }
+
+
+            /**
+             * Builds the wall structure using the Stretcher Bond pattern.
+             */
+            build_stretcher_wall() {
+                const num_courses = Math.floor(this.height_mm / COURSE_HEIGHT);
+                let brick_id = 0;
+
+                for (let course = 0; course < num_courses; course++) {
+                    let x_llc = 0;
+                    let x_urc_local;
+                    const y_llc = course * COURSE_HEIGHT;
+                    const y_urc = (course + 1) * COURSE_HEIGHT;
+
+                    if (course % 2 === 0) {
+                        x_urc_local = x_llc + HALF_BRICK_LENGTH + HEAD_JOINT;
+                        if (x_urc_local > this.width_mm) x_urc_local = this.width_mm;
+                        this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                        x_llc = x_urc_local;
+                        brick_id++;
+
+                        while (x_llc < this.width_mm - BRICK_LENGTH) {
+                            x_urc_local = x_llc + BRICK_LENGTH + HEAD_JOINT;
+                            if (x_urc_local > this.width_mm) x_urc_local = this.width_mm;
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                            x_llc = x_urc_local;
+                            brick_id++;
+                        }
+                        if (x_llc < this.width_mm) {
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, this.width_mm, y_urc));
+                            brick_id++;
+                        }
+
+                    } else {
+                        while (x_llc < this.width_mm - HALF_BRICK_LENGTH) {
+                            x_urc_local = x_llc + BRICK_LENGTH + HEAD_JOINT;
+                            if (x_urc_local > this.width_mm) x_urc_local = this.width_mm;
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, x_urc_local, y_urc));
+                            x_llc = x_urc_local;
+                            brick_id++;
+                        }
+                        if (x_llc < this.width_mm) {
+                            this.bricks.set(brick_id, new Brick(brick_id, x_llc, y_llc, this.width_mm, y_urc));
+                            brick_id++;
+                        }
+                    }
+                }
+            }
+
+
+            /**
+             * Assigns supporting brick IDs to each brick.
+             */
+            assign_support() {
+                const bricksByCourse = new Map();
+                for (const brick of this.bricks.values()) {
+                    const courseY = brick.position.y_llc;
+                    if (!bricksByCourse.has(courseY)) {
+                        bricksByCourse.set(courseY, []);
+                    }
+                    bricksByCourse.get(courseY).push(brick);
+                }
+
+                const sortedCourseYs = Array.from(bricksByCourse.keys()).sort((a, b) => a - b);
+
+                for (let i = 0; i < sortedCourseYs.length; i++) {
+                    const currentCourseY = sortedCourseYs[i];
+                    const currentCourseBricks = bricksByCourse.get(currentCourseY);
+
+                    if (i === 0) {
+                        currentCourseBricks.forEach(brick => brick.supporting_bricks = []);
+                        continue;
+                    }
+
+                    const belowCourseY = sortedCourseYs[i - 1];
+                    const belowCourseBricks = bricksByCourse.get(belowCourseY);
+
+                    for (const brick of currentCourseBricks) {
+                        const brick_llx = brick.position.x_llc;
+                        const brick_urx = brick.position.x_urc;
+
+                        for (const belowBrick of belowCourseBricks) {
+                            const below_llx = belowBrick.position.x_llc;
+                            const below_urx = belowBrick.position.x_urc;
+
+                            const horizontal_overlap_start = Math.max(brick_llx, below_llx);
+                            const horizontal_overlap_end = Math.min(brick_urx, below_urx);
+
+                            if (horizontal_overlap_start < horizontal_overlap_end) {
+                                brick.supporting_bricks.push(belowBrick.id);
+                            }
+                        }
+                    }
+                }
+            }
+
+
+            /**
+             * Finds all bricks that fall strictly within a defined rectangular envelope.
+             */
+            find_bricks_in_envelope(initial_position, width, height) {
+                const envelope_llx = initial_position.x;
+                const envelope_lly = initial_position.y;
+                const envelope_urx = envelope_llx + width;
+                const envelope_ury = envelope_lly + height;
+
+                const bricks_in_envelope = [];
+                for (const brick of this.bricks.values()) {
+                    const brick_llx = brick.position.x_llc;
+                    const brick_lly = brick.position.y_llc;
+                    const brick_urx = brick.position.x_urc;
+                    const brick_ury = brick.position.y_urc;
+
+                    // Strict containment check
+                    if (brick_llx >= envelope_llx &&
+                        brick_urx <= envelope_urx &&
+                        brick_lly >= envelope_lly &&
+                        brick_ury <= envelope_ury) {
+                        bricks_in_envelope.push(brick);
+                    }
+                }
+                return bricks_in_envelope;
+            }
+
+            /**
+             * Identifies envelopes that contain at least one currently layable brick.
+             */
+            get_envelopes_with_layable_bricks(step_x, step_y, width, height) {
+                const envelopes_with_payable = [];
+                const nx = Math.ceil(this.width_mm / step_x);
+                const ny = Math.ceil(this.height_mm / step_y);
+
+                for (let yi = 0; yi < ny; yi++) {
+                    for (let xi = 0; xi < nx; xi++) {
+                        const x = xi * step_x;
+                        const y = yi * step_y;
+                        const bricks_in_env = this.find_bricks_in_envelope({ x, y }, width, height);
+
+                        for (const brick of bricks_in_env) {
+                            if (brick.layed) {
+                                continue;
+                            }
+                            const isLayable = brick.supporting_bricks.length === 0 ||
+                                brick.supporting_bricks.every(sid => this.bricks.get(sid)?.layed);
+
+                            if (isLayable) {
+                                envelopes_with_payable.push({ x, y });
+                                break;
+                            }
+                        }
+                    }
+                }
+                return envelopes_with_payable;
+            }
+
+            /**
+             * Recursively simulates laying bricks within an envelope and counts how many become payable.
+             */
+            recursively_count_payable_bricks(initial_position, width, height) {
+                const tempLayedState = new Map();
+                for (const brick of this.bricks.values()) {
+                    tempLayedState.set(brick.id, brick.layed);
+                }
+
+                const simulated_layed_ids = [];
+
+                const bricksInEnvelope = this.find_bricks_in_envelope(initial_position, width, height);
+                const unlaidBricksInEnvelope = bricksInEnvelope.filter(b => !tempLayedState.get(b.id));
+
+                let frontier = unlaidBricksInEnvelope.filter(b =>
+                    b.supporting_bricks.length === 0 ||
+                    b.supporting_bricks.every(sid => tempLayedState.get(sid))
+                );
+
+                while (frontier.length > 0) {
+                    const new_frontier = [];
+                    for (const brick of frontier) {
+                        if (!tempLayedState.get(brick.id)) {
+                            tempLayedState.set(brick.id, true);
+                            simulated_layed_ids.push(brick.id);
+
+                            for (const potentialNextBrick of unlaidBricksInEnvelope) {
+                                if (!tempLayedState.get(potentialNextBrick.id) &&
+                                    potentialNextBrick.supporting_bricks.includes(brick.id) &&
+                                    potentialNextBrick.supporting_bricks.every(sid => tempLayedState.get(sid))
+                                ) {
+                                    new_frontier.push(potentialNextBrick);
+                                }
+                            }
+                        }
+                    }
+                    frontier = new_frontier;
+                }
+
+                return [simulated_layed_ids.length, simulated_layed_ids];
+            }
+
+
+            /**
+             * Finds the best sequence of strides for a given lookahead depth (recursive).
+             */
+            find_best_multi_stride_path(lookahead_remaining, step_x, step_y, width, height) {
+                if (lookahead_remaining === 0) {
+                    return { total_bricks: 0, first_stride_ids: [] };
+                }
+
+                const originalLayedState = new Map();
+                for (const brick of this.bricks.values()) {
+                    originalLayedState.set(brick.id, brick.layed);
+                }
+
+                let overall_best_total_bricks = -1;
+                let best_first_stride_ids_for_path = [];
+
+                const potential_first_envelopes = this.get_envelopes_with_layable_bricks(step_x, step_y, width, height);
+
+                if (potential_first_envelopes.length === 0) {
+                    return { total_bricks: 0, first_stride_ids: [] };
+                }
+
+                for (const envelope_coords of potential_first_envelopes) {
+                    const [first_stride_count, first_stride_ids] = this.recursively_count_payable_bricks(envelope_coords, width, height);
+
+                    if (first_stride_ids.length === 0) {
+                        continue;
+                    }
+
+                    let current_path_total_bricks = first_stride_count;
+
+                    for (const brick_id of first_stride_ids) {
+                        this.bricks.get(brick_id).layed = true;
+                    }
+
+                    const subsequent_result = this.find_best_multi_stride_path(
+                        lookahead_remaining - 1,
+                        step_x,
+                        step_y,
+                        width,
+                        height
+                    );
+                    current_path_total_bricks += subsequent_result.total_bricks;
+
+                    for (const [brick_id, was_layed] of originalLayedState) {
+                        this.bricks.get(brick_id).layed = was_layed;
+                    }
+
+                    if (current_path_total_bricks > overall_best_total_bricks) {
+                        overall_best_total_bricks = current_path_total_bricks;
+                        best_first_stride_ids_for_path = first_stride_ids;
+                    }
+                    else if (current_path_total_bricks === overall_best_total_bricks && first_stride_ids.length < best_first_stride_ids_for_path.length) {
+                        best_first_stride_ids_for_path = first_stride_ids;
+                    }
+                }
+
+                return { total_bricks: overall_best_total_bricks, first_stride_ids: best_first_stride_ids_for_path };
+            }
+
+            /**
+             * Implements a greedy strategy to determine the entire laying order.
+             */
+            greedy_laying_strategy(step_size_x = 220, step_size_y = 62.5, width = 800, height = 1300) {
+                const full_lay_order = [];
+                let iteration = 0;
+                const MAX_ITERATIONS = 1000;
+
+                while (true) {
+                    iteration++;
+                    if (iteration > MAX_ITERATIONS) {
+                        console.warn("Max iterations reached in greedy_laying_strategy. Wall might not be fully laid.");
+                        break;
+                    }
+
+                    const all_bricks_laid = Array.from(this.bricks.values()).every(brick => brick.layed);
+                    if (all_bricks_laid) {
+                        messageDisplay.textContent = "✅ All bricks have been laid!";
+                        console.log("All bricks have been laid. Stopping the greedy strategy.");
+                        break;
+                    }
+
+                    const test_envelopes = this.get_envelopes_with_layable_bricks(step_size_x, step_size_y, width, height);
+
+                    if (test_envelopes.length === 0) {
+                        messageDisplay.textContent = "No more layable bricks found. Wall incomplete.";
+                        console.log("No more layable envelopes found. Stopping the greedy strategy.");
+                        break;
+                    }
+
+                    let best_count = -1;
+                    let lay_ids_for_this_stride = [];
+
+                    for (const envelope_coords of test_envelopes) {
+                        const [count, ids] = this.recursively_count_payable_bricks(envelope_coords, width, height);
+
+                        if (count > best_count || (count === best_count && ids.length < lay_ids_for_this_stride.length)) {
+                            best_count = count;
+                            lay_ids_for_this_stride = ids;
+                        }
+                    }
+
+                    if (lay_ids_for_this_stride.length === 0) {
+                        messageDisplay.textContent = "No new bricks can be laid in this iteration. Stopping.";
+                        console.log("No new bricks can be laid in this iteration. Stopping the greedy strategy.");
+                        break;
+                    }
+
+                    for (const brick_id of lay_ids_for_this_stride) {
+                        const brick = this.bricks.get(brick_id);
+                        if (brick) {
+                            brick.layed = true;
+                        }
+                    }
+                    full_lay_order.push(lay_ids_for_this_stride);
+                }
+                return full_lay_order;
+            }
+
+            /**
+             * Draws the current state of the wall on the canvas.
+             */
+            drawWall() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const wallDisplayWidth = this.width_mm;
+                const wallDisplayHeight = this.height_mm;
+
+                const containerWidth = canvas.parentElement.clientWidth * 0.9;
+                const containerHeight = window.innerHeight * 0.8;
+
+                const scaleX = containerWidth / wallDisplayWidth;
+                const scaleY = containerHeight / wallDisplayHeight;
+                const scale = Math.min(scaleX, scaleY);
+
+                canvas.width = wallDisplayWidth * scale;
+                canvas.height = wallDisplayHeight * scale;
+
+                ctx.save();
+                ctx.scale(scale, scale);
+
+                ctx.translate(0, this.height_mm);
+                ctx.scale(1, -1);
+
+                for (const brick of this.bricks.values()) {
+                    const { x_llc, y_llc, x_urc, y_urc } = brick.position;
+                    const brickWidth = x_urc - x_llc;
+                    const brickHeight = y_urc - y_llc;
+
+                    ctx.fillStyle = brick.layed ? brick.color : UNLAID_BRICK_COLOR;
+                    ctx.fillRect(x_llc, y_llc, brickWidth, brickHeight);
+
+                    ctx.strokeStyle = BRICK_BORDER_COLOR;
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x_llc, y_llc, brickWidth, brickHeight);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        /**
+         * Initializes the application.
+         */
+        function initializeApp() {
+            const selectedBond = bondSelect.value;
+
+            colorCycleIndex = 0;
+            lastLaidBrickInfo.textContent = "Last Laid Brick ID: None";
+
+            // Temporary wall for stride calculation (its 'layed' state will be modified, but we don't use it for rendering)
+            const tempWallForStrides = new Wall(selectedBond, 2300, 2000);
+            allStrides = tempWallForStrides.greedy_laying_strategy();
+            console.log("Total strides calculated:", allStrides.length);
+
+            // Create the actual wall instance for interactive display, ensuring all bricks start unlaid
+            wallInstance = new Wall(selectedBond, 2300, 2000);
+            for (const brick of wallInstance.bricks.values()) {
+                brick.layed = false; // Explicitly ensure all bricks are unlaid for the display instance
+            }
+
+            currentStrideIndex = 0;
+            currentBrickInStrideIndex = 0; // Reset brick index within stride
+
+            messageDisplay.textContent = "Click 'Lay Next Stride' or 'Lay One Brick' to begin!";
+            layNextBtn.disabled = false;
+            laySingleBrickBtn.disabled = false;
+            wallInstance.drawWall();
+        }
+
+        /**
+         * Lays the next stride of bricks and updates the display.
+         */
+        function layNextStride() {
+            // Reset single brick progress when laying a full stride
+            currentBrickInStrideIndex = 0;
+
+            if (currentStrideIndex < allStrides.length) {
+                const stride = allStrides[currentStrideIndex];
+                const strideColor = LAID_BRICK_COLORS[colorCycleIndex % LAID_BRICK_COLORS.length];
+
+                for (const brickId of stride) {
+                    const brick = wallInstance.bricks.get(brickId);
+                    if (brick) {
+                        brick.layed = true;
+                        brick.color = strideColor;
+                        lastLaidBrickInfo.textContent = `Last Laid Brick ID: ${brick.id}`;
+                    }
+                }
+                messageDisplay.textContent = `Laying stride ${currentStrideIndex + 1} of ${allStrides.length}. Bricks laid: ${stride.length}`;
+                currentStrideIndex++;
+                colorCycleIndex++;
+                wallInstance.drawWall();
+            } else {
+                messageDisplay.textContent = "✅ All bricks have been laid!";
+                layNextBtn.disabled = true;
+                laySingleBrickBtn.disabled = true;
+            }
+        }
+
+        /**
+         * Lays a single brick from the current stride.
+         */
+        function laySingleBrick() {
+            if (currentStrideIndex < allStrides.length) {
+                const currentStride = allStrides[currentStrideIndex];
+
+                if (currentBrickInStrideIndex < currentStride.length) {
+                    const brickIdToLay = currentStride[currentBrickInStrideIndex];
+                    const brick = wallInstance.bricks.get(brickIdToLay);
+
+                    if (brick) {
+                        brick.layed = true;
+                        // Use the color for the current stride for consistency
+                        brick.color = LAID_BRICK_COLORS[currentStrideIndex % LAID_BRICK_COLORS.length];
+                        lastLaidBrickInfo.textContent = `Last Laid Brick ID: ${brick.id}`;
+                        messageDisplay.textContent = `Layed single brick: ID ${brick.id} from stride ${currentStrideIndex + 1}`;
+                        wallInstance.drawWall();
+                    }
+
+                    currentBrickInStrideIndex++;
+
+                    // Check if all bricks in the current stride are laid
+                    if (currentBrickInStrideIndex >= currentStride.length) {
+                        messageDisplay.textContent += `. Stride ${currentStrideIndex + 1} completed.`;
+                        currentStrideIndex++; // Move to the next stride
+                        currentBrickInStrideIndex = 0; // Reset brick index for the new stride
+                        colorCycleIndex++; // Advance color for the new stride
+                    }
+
+                    // After laying a brick, check if all bricks in the entire wall are laid
+                    const all_bricks_now_laid = Array.from(wallInstance.bricks.values()).every(brick => brick.layed);
+                    if (all_bricks_now_laid) {
+                        messageDisplay.textContent = "✅ All bricks have been laid!";
+                        layNextBtn.disabled = true;
+                        laySingleBrickBtn.disabled = true;
+                    }
+
+                } else {
+                    // This case should ideally not be hit if logic is perfect, but acts as a safeguard
+                    // if currentBrickInStrideIndex somehow gets out of sync before currentStrideIndex increments.
+                    messageDisplay.textContent = "No more bricks in current stride. Advancing to next (or all laid).";
+                    currentStrideIndex++;
+                    currentBrickInStrideIndex = 0;
+                    laySingleBrick(); // Try to lay the first brick of the next stride immediately
+                }
+            } else {
+                messageDisplay.textContent = "✅ All bricks have been laid!";
+                layNextBtn.disabled = true;
+                laySingleBrickBtn.disabled = true;
+            }
+        }
+
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', initializeApp);
+        layNextBtn.addEventListener('click', layNextStride);
+        laySingleBrickBtn.addEventListener('click', laySingleBrick);
+        resetBtn.addEventListener('click', initializeApp);
+        bondSelect.addEventListener('change', initializeApp);
+
+        // Keyboard listener for 'Enter' key
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault(); // Prevent default Enter key behavior (e.g., form submission)
+                laySingleBrick();
+            }
+        });
+
+        // Handle window resizing to keep canvas responsive
+        window.addEventListener('resize', () => {
+            if (wallInstance) {
+                wallInstance.drawWall();
+            }
+        });
+    </script>
+</body>
+</html>
