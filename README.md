@@ -1,4 +1,4 @@
-## Brick Laying Simulation (Python Script)
+## Brick Laying Simulation
 This Python script simulates the laying of bricks for a wall, supporting different bond patterns and visualizing the process directly in your terminal. It generates a laying order based on a greedy strategy, determining which bricks become "layable" as others are placed.
 
 For a more interactive and visual experience of the brick laying process, you can visit the online simulator built with HTML, CSS, and JavaScript. The underlying brick-laying logic (how bricks are positioned and their support dependencies) is identical to this Python script, offering a consistent simulation experience in a graphical interface.
