@@ -1,5 +1,6 @@
 import os
 import itertools
+import argparse # Import argparse for command-line arguments
 
 class Brick:
     def __init__(self, brick_id, x_llc, y_llc,x_urc,y_urc):
@@ -125,9 +126,10 @@ class Wall:
             
     def _build_wall(self):
         if self.bond=='stretcher':
+
             self.build_stretcher_wall()
         elif self.bond=='english_cross':
-            self.width_mm=2080
+
             self.build_english_cross_bond()
     def build_stretcher_wall(self):
         HALF_BRICK_LENGTH = 100
@@ -252,7 +254,7 @@ class Wall:
                 for brick in bricks_in_env:
                     if brick.layed:
                         continue
-                    # Payable if course 0 (no supports) or all supports are laid
+                    # Layable if course 0 (no supports) or all supports are laid
                     if not brick.supporting_bricks or all(self.bricks[sid].layed for sid in brick.supporting_bricks):
                         envelopes_with_payable.append([xi, yi])
                         break  # No need to check other bricks in this envelope
@@ -403,36 +405,81 @@ class Wall:
 
         all_steps = self.greedy_laying_strategy()
         print(len(all_steps))
-        #bricks_to_lay = [brick_id for step in all_steps for brick_id in step]
-        for stride in all_steps:
-            stride_color=next(color_cycle)
-            for brick_id in stride:
-                self.bricks[brick_id].layed = True
-                course=int(brick_id/11)*2
+        if self.bond=='stretcher':
+            #bricks_to_lay = [brick_id for step in all_steps for brick_id in step]
+            for stride in all_steps:
+                stride_color=next(color_cycle)
+                for brick_id in stride:
+                    self.bricks[brick_id].layed = True
+                    course=int(brick_id/11)*2
 
 
-                brick_number=brick_id%11
-            
+                    brick_number=brick_id%11
                 
-                #course=self.wall_visual[course]
-                #course[brick_number]=course[brick_number].replace('░', '█')
-                self.wall_visual[course][brick_number]=self.wall_visual[course][brick_number].replace('░', stride_color)
-                #self.wall_visual[course]=course
-                input("Press Enter to lay next brick...")
-                self.print_wall()
+                    
+                    #course=self.wall_visual[course]
+                    #course[brick_number]=course[brick_number].replace('░', '█')
+                    self.wall_visual[course][brick_number]=self.wall_visual[course][brick_number].replace('░', stride_color)
+                    #self.wall_visual[course]=course
+                    input("Press Enter to lay next brick...")
+                    self.print_wall()
 
-        print("✅ All bricks laid!")
+            print("✅ All bricks laid!")
+        else:
+        #bricks_to_lay = [brick_id for step in all_steps for brick_id in step]
+            for stride in all_steps:
+                stride_color=next(color_cycle)
+                for brick_id in stride:
+                    self.bricks[brick_id].layed = True
+                    course=int(self.bricks[brick_id].position[1]/62.5)
+                    if course==0:
+                        brick_number_in_course=brick_id
+                    else:
+                        id=0
+                        for index in range(course):
+                            id+=len(self.wall_visual[index])
+                        brick_number_in_course= brick_id-id
+                        
+
+                
+                    
+                    #course=self.wall_visual[course]
+                    #course[brick_number]=course[brick_number].replace('░', '█')
+                    self.wall_visual[course][brick_number_in_course]=self.wall_visual[course][brick_number_in_course].replace('░', stride_color)
+                    #self.wall_visual[course]=course
+                    input("Press Enter to lay next brick...")
+                    self.print_wall()
 
 
 
-wall = Wall(bond='english_cross',width_mm=2080)
-wall.interactive_laying()
 
-# Run interactive laying
-#interactive_laying(wall)
-# Simulate laying a few base bricks
+def main():
+    """
+    Main function to parse command-line arguments and run the wall simulation.
+    """
+    parser = argparse.ArgumentParser(description="Simulate brick wall laying with different bond types.")
+    parser.add_argument(
+        "--width_mm", 
+        type=int, 
+        default=2300, 
+        help="Width of the wall in millimeters (default: 2300)"
+    )
+    parser.add_argument(
+        "--bond", 
+        type=str, 
+        default="stretcher", 
+        choices=["stretcher", "english_cross"], 
+        help="Type of brick bond (stretcher or english_cross, default: stretcher)"
+    )
+    
+    args = parser.parse_args()
 
+    print(f"Creating wall with width: {args.width_mm}mm and bond type: {args.bond}")
+    wall = Wall(bond=args.bond, width_mm=args.width_mm)
+    wall.interactive_laying()
 
-# Run recursive hypothetical simulation
+# Entry point for the script
+if __name__ == "__main__":
+    main()
 
 

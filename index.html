@@ -411,7 +411,7 @@
              * Identifies envelopes that contain at least one currently layable brick.
              */
             get_envelopes_with_layable_bricks(step_x, step_y, width, height) {
-                const envelopes_with_payable = [];
+                const envelopes_with_layable = [];
                 const nx = Math.ceil(this.width_mm / step_x);
                 const ny = Math.ceil(this.height_mm / step_y);
 
@@ -429,19 +429,19 @@
                                 brick.supporting_bricks.every(sid => this.bricks.get(sid)?.layed);
 
                             if (isLayable) {
-                                envelopes_with_payable.push({ x, y });
+                                envelopes_with_layable.push({ x, y });
                                 break;
                             }
                         }
                     }
                 }
-                return envelopes_with_payable;
+                return envelopes_with_layable;
             }
 
             /**
-             * Recursively simulates laying bricks within an envelope and counts how many become payable.
+             * Recursively simulates laying bricks within an envelope and counts how many become layable.
              */
-            recursively_count_payable_bricks(initial_position, width, height) {
+            recursively_count_layable_bricks(initial_position, width, height) {
                 const tempLayedState = new Map();
                 for (const brick of this.bricks.values()) {
                     tempLayedState.set(brick.id, brick.layed);
@@ -483,7 +483,7 @@
 
             /**
              * Finds the best sequence of strides for a given lookahead depth (recursive).
-             */
+             
             find_best_multi_stride_path(lookahead_remaining, step_x, step_y, width, height) {
                 if (lookahead_remaining === 0) {
                     return { total_bricks: 0, first_stride_ids: [] };
@@ -504,7 +504,7 @@
                 }
 
                 for (const envelope_coords of potential_first_envelopes) {
-                    const [first_stride_count, first_stride_ids] = this.recursively_count_payable_bricks(envelope_coords, width, height);
+                    const [first_stride_count, first_stride_ids] = this.recursively_count_layable_bricks(envelope_coords, width, height);
 
                     if (first_stride_ids.length === 0) {
                         continue;
@@ -540,7 +540,7 @@
 
                 return { total_bricks: overall_best_total_bricks, first_stride_ids: best_first_stride_ids_for_path };
             }
-
+            */
             /**
              * Implements a greedy strategy to determine the entire laying order.
              */
@@ -575,7 +575,7 @@
                     let lay_ids_for_this_stride = [];
 
                     for (const envelope_coords of test_envelopes) {
-                        const [count, ids] = this.recursively_count_payable_bricks(envelope_coords, width, height);
+                        const [count, ids] = this.recursively_count_layable_bricks(envelope_coords, width, height);
 
                         if (count > best_count || (count === best_count && ids.length < lay_ids_for_this_stride.length)) {
                             best_count = count;
