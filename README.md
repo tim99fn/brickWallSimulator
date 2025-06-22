@@ -26,6 +26,9 @@ python brick_simulator.py [OPTIONS]
 --bond [stretcher|english_cross]: Specifies the type of brick bond to simulate.
 Default: stretcher
 Example: --bond english_cross
+
 --width_mm [value]: Sets the width of the wall in millimeters.
+
 Default: 2300 (for stretcher bond)
+
 Important Note for English Cross Bond: For the english_cross bond, a width of 2080 mm is specifically recommended. This width ensures the wall has "straight edges" (a consistent pattern without awkward partial bricks at the ends of courses), similar to a standard assignment setup for this bond. While other widths can be used, 2080 mm provides an aesthetically complete and mathematically convenient wall for the English Cross pattern in this simulation.
